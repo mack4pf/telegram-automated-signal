@@ -48,13 +48,17 @@ const webhookController = {
     },
 
     formatSignalMessage(alertData) {
-        const signal = alertData.signal || '';
+        const signal = (alertData.signal || '').toUpperCase(); // CONVERT TO UPPERCASE
         const ticker = alertData.ticker || '';
         
+        console.log(`🔍 Detected signal: "${signal}"`);
+        
         // Check if this is a TRADE RESULT (WIN/LOSS) or NEW SIGNAL
-        if (signal.includes('WIN') || signal.includes('LOSS')) {
+        if (signal.includes('WIN') || signal.includes('LOSS') || signal.includes('WON') || signal.includes('LOST')) {
+            console.log('🎯 Formatting as TRADE RESULT');
             return webhookController.formatTradeResult(alertData);
         } else {
+            console.log('⚡ Formatting as NEW SIGNAL');
             return webhookController.formatNewSignal(alertData);
         }
     },
@@ -64,12 +68,12 @@ const webhookController = {
         const pair = alertData.ticker;
         let flag = '🎯';
         
-        if (pair.includes('EUR/USD')) flag = '🇪🇺🇺🇸';
-        else if (pair.includes('GBP/USD')) flag = '🇬🇧🇺🇸';
-        else if (pair.includes('USD/JPY')) flag = '🇺🇸🇯🇵';
-        else if (pair.includes('AUD/USD')) flag = '🇦🇺🇺🇸';
-        else if (pair.includes('USD/CAD')) flag = '🇺🇸🇨🇦';
-        else if (pair.includes('XAU/USD')) flag = '🥇🇺🇸';
+        if (pair.includes('EUR/USD') || pair.includes('EURUSD')) flag = '🇪🇺🇺🇸';
+        else if (pair.includes('GBP/USD') || pair.includes('GBPUSD')) flag = '🇬🇧🇺🇸';
+        else if (pair.includes('USD/JPY') || pair.includes('USDJPY')) flag = '🇺🇸🇯🇵';
+        else if (pair.includes('AUD/USD') || pair.includes('AUDUSD')) flag = '🇦🇺🇺🇸';
+        else if (pair.includes('USD/CAD') || pair.includes('USDCAD')) flag = '🇺🇸🇨🇦';
+        else if (pair.includes('XAU/USD') || pair.includes('XAUUSD')) flag = '🥇🇺🇸';
         
         // Extract signal direction and REAL timeframe
         const signal = alertData.signal || 'BUY';
@@ -78,23 +82,23 @@ const webhookController = {
         return `⚡ <b>INCOMING SIGNAL</b> 
 
 ${flag} <b>${pair}</b>
-🟢 <b>${signal.toUpperCase()}</b>
+🔔 <b>${signal.toUpperCase()}</b>
 ⏰ <b>${timeframe}</b>
 
 `;
     },
 
     formatTradeResult(alertData) {
-        const signal = alertData.signal || '';
+        const signal = (alertData.signal || '').toUpperCase();
         const pair = alertData.ticker || '';
         
         let resultEmoji = '🎯';
         let resultText = 'RESULT';
         
-        if (signal.includes('WIN')) {
+        if (signal.includes('WIN') || signal.includes('WON')) {
             resultEmoji = '🏆';
             resultText = 'WIN';
-        } else if (signal.includes('LOSS')) {
+        } else if (signal.includes('LOSS') || signal.includes('LOST')) {
             resultEmoji = '🚫';
             resultText = 'LOSS';
         }
@@ -118,7 +122,7 @@ ${flag} <b>${pair}</b>
         if (signal.includes('30MIN') || signal.includes('30M')) return '30 MINUTES';
         
         // Default to 1 minute if no timeframe detected
-        return '5 MINUTE';"";
+        return '5 MINUTES';
     }
 };
 
