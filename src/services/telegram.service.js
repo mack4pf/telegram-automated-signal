@@ -1,4 +1,5 @@
 const axios = require('axios');
+const FormData = require('form-data');
 
 class TelegramService {
     constructor() {
@@ -16,7 +17,24 @@ class TelegramService {
         }
 
         // Add to queue
-        this.queue.push({ chatId, message });
+        this.queue.push({ chatId, message, type: 'text' });
+        
+        // Process queue if not already processing
+        if (!this.isProcessing) {
+            this.processQueue();
+        }
+        
+        return true;
+    }
+
+    async sendPhotoToChannel(chatId, photoBuffer, caption) {
+        if (!this.isEnabled) {
+            console.log('⚠️  Telegram bot token not set - skipping photo');
+            return false;
+        }
+
+        // Add to queue
+        this.queue.push({ chatId, photoBuffer, caption, type: 'photo' });
         
         // Process queue if not already processing
         if (!this.isProcessing) {
@@ -32,7 +50,7 @@ class TelegramService {
         this.isProcessing = true;
         
         while (this.queue.length > 0) {
-            const { chatId, message } = this.queue[0];
+            const item = this.queue[0];
             
             // Rate limiting: wait 1 second between messages
             const now = Date.now();
@@ -42,21 +60,14 @@ class TelegramService {
             }
             
             try {
-                const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+                if (item.type === 'text') {
+                    await this.sendTextMessage(item.chatId, item.message);
+                } else if (item.type === 'photo') {
+                    await this.sendPhotoMessage(item.chatId, item.photoBuffer, item.caption);
+                }
                 
-                const response = await axios.post(url, {
-                    chat_id: chatId,
-                    text: message,
-                    parse_mode: 'HTML'
-                }, {
-                    timeout: 10000
-                });
-
-                console.log('✅ Message sent to Telegram channel');
                 this.lastSentTime = Date.now();
-                
-                // Remove from queue after success
-                this.queue.shift();
+                this.queue.shift(); // Remove from queue after success
                 
             } catch (error) {
                 console.error('❌ Telegram send error:', error.response?.data || error.message);
@@ -77,6 +88,40 @@ class TelegramService {
         this.isProcessing = false;
     }
 
+    async sendTextMessage(chatId, message) {
+        const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+        
+        const response = await axios.post(url, {
+            chat_id: chatId,
+            text: message,
+            parse_mode: 'HTML'
+        }, {
+            timeout: 10000
+        });
+
+        console.log('✅ Text message sent to Telegram channel');
+        return response.data;
+    }
+
+    async sendPhotoMessage(chatId, photoBuffer, caption) {
+        const url = `https://api.telegram.org/bot${this.botToken}/sendPhoto`;
+        
+        const formData = new FormData();
+        formData.append('chat_id', chatId);
+        formData.append('photo', photoBuffer, { filename: 'chart.png' });
+        formData.append('caption', caption);
+        formData.append('parse_mode', 'HTML');
+
+        const response = await axios.post(url, formData, {
+            headers: formData.getHeaders(),
+            timeout: 15000
+        });
+
+        console.log('✅ Photo message sent to Telegram channel');
+        return response.data;
+    }
+
+    // Check if Telegram is configured
     isConfigured() {
         return this.isEnabled;
     }
