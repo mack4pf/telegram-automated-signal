@@ -33,7 +33,7 @@ const webhookController = {
             console.log('🔄 Processing signal for Telegram...');
 
             // Format for binary options signals
-            const message = webhookController.formatBinarySignal(alertData);
+            const message = webhookController.formatSignalMessage(alertData);
             const success = await telegramService.sendToChannel(alertData.chat_id, message);
 
             if (success) {
@@ -47,7 +47,19 @@ const webhookController = {
         }
     },
 
-    formatBinarySignal(alertData) {
+    formatSignalMessage(alertData) {
+        const signal = alertData.signal || '';
+        const ticker = alertData.ticker || '';
+        
+        // Check if this is a TRADE RESULT (WIN/LOSS) or NEW SIGNAL
+        if (signal.includes('WIN') || signal.includes('LOSS')) {
+            return webhookController.formatTradeResult(alertData);
+        } else {
+            return webhookController.formatNewSignal(alertData);
+        }
+    },
+
+    formatNewSignal(alertData) {
         // Extract pair and determine flag emoji
         const pair = alertData.ticker;
         let flag = '🎯';
@@ -59,9 +71,9 @@ const webhookController = {
         else if (pair.includes('USD/CAD')) flag = '🇺🇸🇨🇦';
         else if (pair.includes('XAU/USD')) flag = '🥇🇺🇸';
         
-        // Extract signal direction and timeframe
+        // Extract signal direction and REAL timeframe
         const signal = alertData.signal || 'BUY';
-        const timeframe = webhookController.extractTimeframe(alertData);
+        const timeframe = webhookController.extractRealTimeframe(alertData);
         
         return `⚡ <b>INCOMING SIGNAL</b> 
 
@@ -72,12 +84,41 @@ ${flag} <b>${pair}</b>
 `;
     },
 
-    extractTimeframe(alertData) {
-        // Extract timeframe from signal or use default
-        if (alertData.signal && alertData.signal.includes('1MIN')) return '1 MINUTE';
-        if (alertData.signal && alertData.signal.includes('3MIN')) return '3 MINUTES';
-        if (alertData.signal && alertData.signal.includes('5MIN')) return '5 MINUTES';
-        return '1 MINUTE'; // Default for binary
+    formatTradeResult(alertData) {
+        const signal = alertData.signal || '';
+        const pair = alertData.ticker || '';
+        
+        let resultEmoji = '🎯';
+        let resultText = 'RESULT';
+        
+        if (signal.includes('WIN')) {
+            resultEmoji = '🏆';
+            resultText = 'WIN';
+        } else if (signal.includes('LOSS')) {
+            resultEmoji = '🚫';
+            resultText = 'LOSS';
+        }
+        
+        return `${resultEmoji} <b>TRADE RESULT : ${resultText}</b> 
+
+📊 <b>${pair}</b>
+💰 <b>${alertData.price || 'N/A'}</b>
+
+`;
+    },
+
+    extractRealTimeframe(alertData) {
+        const signal = alertData.signal || '';
+        
+        // Look for actual timeframe in the signal
+        if (signal.includes('5MIN') || signal.includes('5M')) return '5 MINUTES';
+        if (signal.includes('3MIN') || signal.includes('3M')) return '3 MINUTES'; 
+        if (signal.includes('1MIN') || signal.includes('1M')) return '1 MINUTE';
+        if (signal.includes('15MIN') || signal.includes('15M')) return '15 MINUTES';
+        if (signal.includes('30MIN') || signal.includes('30M')) return '30 MINUTES';
+        
+        // Default to 1 minute if no timeframe detected
+        return '5 MINUTE';"";
     }
 };
 
