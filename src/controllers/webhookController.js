@@ -57,13 +57,18 @@ const webhookController = {
         try {
             console.log('🎯 Processing trade result with chart...');
             
-            // 1. Generate price movement chart
-            const chartBuffer = await realChartService.generateTradeChart(alertData.ticker, 5);
+            // 1. Determine if it's WIN or LOSS
+            const signal = (alertData.signal || '').toUpperCase();
+            const isWin = signal.includes('WIN') || signal.includes('WON');
+            const currentPrice = parseFloat(alertData.price) || 0;
             
-            // 2. Format trade result message
+            // 2. Generate price movement chart with WIN/LOSS colors
+            const chartBuffer = await realChartService.generateResultChart(alertData.ticker, isWin, currentPrice, 5);
+            
+            // 3. Format trade result message
             const message = webhookController.formatTradeResult(alertData);
             
-            // 3. Send to Telegram
+            // 4. Send to Telegram
             if (chartBuffer) {
                 // Send with chart image
                 const success = await telegramService.sendPhotoToChannel(alertData.chat_id, chartBuffer, message);

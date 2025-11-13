@@ -2,121 +2,84 @@ const axios = require('axios');
 const { createCanvas } = require('canvas');
 
 class RealChartService {
-    constructor() {
-        this.apis = [
-            { name: 'twelvedata', priority: 1 },
-            { name: 'alphavantage', priority: 2 }, 
-            { name: 'yahoo', priority: 3 },
-            { name: 'fmp', priority: 4 }
-        ];
-    }
-
-    async generateTradeChart(ticker, durationMinutes = 5) {
-        console.log(`📊 Generating REAL ${durationMinutes}min chart for: ${ticker}`);
-        
+    async generateResultChart(ticker, isWin, currentPrice, durationMinutes = 5) {
         try {
-            // Try APIs in order until one works
+            console.log(`📊 Generating ${isWin ? 'WIN' : 'LOSS'} chart for: ${ticker}`);
+            
+            // 1. Get REAL price data for the last 5 minutes
             const priceData = await this.getRealPriceData(ticker, durationMinutes);
             
             if (!priceData || priceData.length === 0) {
-                throw new Error('All APIs failed - no real data available');
+                throw new Error('No real price data available');
             }
             
-            const chartBuffer = await this.generateLineChart(priceData, ticker);
-            console.log('✅ REAL price movement chart generated');
+            // Use the actual price data for open/close
+            const openPrice = priceData[0].price; // First price in the 5-minute period
+            const closePrice = currentPrice; // Current price from TradingView
+            
+            // 2. Generate result chart with win/loss colors
+            const chartBuffer = await this.generateResultLineChart(priceData, ticker, isWin, openPrice, closePrice);
+            
+            console.log('✅ Result chart generated');
             return chartBuffer;
             
         } catch (error) {
-            console.error('❌ ALL real data APIs failed:', error.message);
-            return null; // No chart instead of fake data
+            console.error('❌ Chart generation error:', error.message);
+            return null;
         }
     }
 
     async getRealPriceData(ticker, durationMinutes) {
-        // Try each API in priority order
-        for (const api of this.apis.sort((a, b) => a.priority - b.priority)) {
-            try {
-                console.log(`🔄 Trying ${api.name} API...`);
-                const data = await this[`fetchFrom${this.capitalize(api.name)}`](ticker, durationMinutes);
-                
-                if (data && data.length > 0) {
-                    console.log(`✅ Success with ${api.name} API`);
-                    return data;
-                }
-            } catch (error) {
-                console.log(`❌ ${api.name} API failed:`, error.message);
-                continue; // Try next API
+        try {
+            console.log(`🔄 Fetching real data from Yahoo for: ${ticker}`);
+            const symbol = this.formatSymbol(ticker) + '=X';
+            const response = await axios.get(
+                `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1d&interval=1m`,
+                { timeout: 10000 }
+            );
+            
+            if (!response.data.chart.result[0]) {
+                throw new Error('No data from Yahoo');
             }
+            
+            const result = response.data.chart.result[0];
+            const prices = result.indicators.quote[0].close;
+            const timestamps = result.timestamp;
+            
+            // Get last X minutes of data (remove any null values)
+            const validData = prices
+                .map((price, index) => ({ price, timestamp: timestamps[index] }))
+                .filter(item => item.price !== null)
+                .slice(-durationMinutes);
+            
+            return validData.map((item, index) => ({
+                time: `${index}min`,
+                price: parseFloat(item.price)
+            }));
+            
+        } catch (error) {
+            console.error('❌ Yahoo API failed:', error.message);
+            throw new Error('Could not fetch real price data');
         }
-        
-        throw new Error('All data sources failed');
     }
 
-    async fetchFromTwelvedata(ticker, durationMinutes) {
-        const symbol = this.formatSymbol(ticker);
-        const response = await axios.get(
-            `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1min&outputsize=${durationMinutes}&apikey=demo`
-        );
-        
-        return response.data.values.map(item => ({
-            time: item.datetime,
-            price: parseFloat(item.close)
-        })).reverse();
-    }
-
-    async fetchFromAlphavantage(ticker, durationMinutes) {
-        const symbol = this.formatSymbol(ticker);
-        const response = await axios.get(
-            `https://www.alphavantage.co/query?function=FX_INTRADAY&from_symbol=${symbol.substring(0,3)}&to_symbol=${symbol.substring(3)}&interval=1min&apikey=demo&outputsize=compact`
-        );
-        
-        const timeSeries = response.data['Time Series FX (1min)'];
-        return Object.entries(timeSeries).slice(0, durationMinutes).map(([time, data]) => ({
-            time: time,
-            price: parseFloat(data['4. close'])
-        })).reverse();
-    }
-
-    async fetchFromYahoo(ticker, durationMinutes) {
-        const symbol = this.formatSymbol(ticker) + '=X';
-        const response = await axios.get(
-            `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1d&interval=1m`
-        );
-        
-        const quotes = response.data.chart.result[0];
-        const prices = quotes.indicators.quote[0].close;
-        const timestamps = quotes.timestamp;
-        
-        return prices.slice(-durationMinutes).map((price, index) => ({
-            time: new Date(timestamps[timestamps.length - durationMinutes + index] * 1000).toISOString(),
-            price: parseFloat(price)
-        }));
-    }
-
-    async fetchFromFmp(ticker, durationMinutes) {
-        const symbol = this.formatSymbol(ticker);
-        const response = await axios.get(
-            `https://financialmodelingprep.com/api/v3/historical-chart/1min/${symbol}?apikey=demo`
-        );
-        
-        return response.data.slice(0, durationMinutes).map(item => ({
-            time: item.date,
-            price: parseFloat(item.close)
-        })).reverse();
-    }
-
-    generateLineChart(priceData, ticker) {
+    async generateResultLineChart(priceData, ticker, isWin, openPrice, closePrice) {
         const width = 600;
-        const height = 300;
+        const height = 400;
         const canvas = createCanvas(width, height);
         const ctx = canvas.getContext('2d');
 
-        // Background
-        ctx.fillStyle = '#1e1e1e';
+        // Background color based on WIN/LOSS
+        const backgroundColor = isWin ? '#011b0bc4' : '#2e0707ff'; // Dark green/red
+        const lineColor = isWin ? '#8fe4beff' : '#f78e8eff'; // Bright green/red
+        const textColor = '#ffffff';
+
+        // Fill background
+        ctx.fillStyle = backgroundColor;
         ctx.fillRect(0, 0, width, height);
 
-        // Chart setup
-        const padding = 50;
+        // Chart area
+        const padding = 60;
         const chartWidth = width - (padding * 2);
         const chartHeight = height - (padding * 2);
 
@@ -124,11 +87,11 @@ class RealChartService {
         const prices = priceData.map(p => p.price);
         const minPrice = Math.min(...prices);
         const maxPrice = Math.max(...prices);
-        const priceRange = maxPrice - minPrice || 1;
+        const priceRange = maxPrice - minPrice || 0.001;
 
         // Draw price line
-        ctx.strokeStyle = '#00ff00';
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = lineColor;
+        ctx.lineWidth = 4;
         ctx.beginPath();
 
         priceData.forEach((point, index) => {
@@ -139,17 +102,35 @@ class RealChartService {
         });
         ctx.stroke();
 
-        // Labels
-        ctx.fillStyle = '#ffffff';
+        // Draw start and end points
+        ctx.fillStyle = lineColor;
+        ctx.beginPath();
+        ctx.arc(padding, padding + chartHeight - ((priceData[0].price - minPrice) / priceRange) * chartHeight, 6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.beginPath();
+        ctx.arc(width - padding, padding + chartHeight - ((priceData[priceData.length - 1].price - minPrice) / priceRange) * chartHeight, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Add labels
+        ctx.fillStyle = textColor;
+        ctx.font = 'bold 20px Arial';
+        ctx.fillText(`${ticker} • ${isWin ? '🏆 WIN' : '🚫 LOSS'}`, padding, 30);
+
         ctx.font = 'bold 16px Arial';
-        ctx.fillText(`${ticker} - Price Movement`, padding, 25);
-        
+        ctx.fillText(`OPEN: ${openPrice.toFixed(5)}`, padding, height - 20);
+        ctx.fillText(`CLOSE: ${closePrice.toFixed(5)}`, width - 150, height - 20);
+
+        // Price change
+        const change = closePrice - openPrice;
+        const changePercent = ((change / openPrice) * 100).toFixed(3);
+        const changeText = `CHANGE: ${change >= 0 ? '+' : ''}${change.toFixed(5)} (${changePercent}%)`;
+        ctx.fillText(changeText, width / 2 - 100, height - 40);
+
+        // Time labels
         ctx.font = '12px Arial';
-        ctx.fillText(`Start: ${priceData[0].price.toFixed(5)}`, width - 150, 25);
-        ctx.fillText(`End: ${priceData[priceData.length - 1].price.toFixed(5)}`, width - 150, 45);
-        
-        const priceChange = priceData[priceData.length - 1].price - priceData[0].price;
-        ctx.fillText(`Change: ${priceChange.toFixed(5)}`, width - 150, 65);
+        ctx.fillText('5 MIN AGO', padding, height - 60);
+        ctx.fillText('NOW', width - padding - 20, height - 60);
 
         return canvas.toBuffer('image/png');
     }
@@ -160,13 +141,10 @@ class RealChartService {
             'GBP/USD': 'GBPUSD', 'GBPUSD': 'GBPUSD', 
             'USD/JPY': 'USDJPY', 'USDJPY': 'USDJPY',
             'AUD/USD': 'AUDUSD', 'AUDUSD': 'AUDUSD',
-            'XAU/USD': 'XAUUSD', 'XAUUSD': 'XAUUSD'
+            'XAU/USD': 'XAUUSD', 'XAUUSD': 'XAUUSD',
+            'USD/CAD': 'USDCAD', 'USDCAD': 'USDCAD'
         };
         return pairs[ticker.toUpperCase()] || ticker.replace('/', '');
-    }
-
-    capitalize(str) {
-        return str.charAt(0).toUpperCase() + str.slice(1);
     }
 }
 
