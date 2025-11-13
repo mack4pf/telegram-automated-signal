@@ -1,5 +1,6 @@
 const redisService = require('../services/redis.service');
 const telegramService = require('../services/telegram.service');
+const realChartService = require('../services/realChart.service');
 
 // Use a simple object instead of class to avoid "this" issues
 const webhookController = {
@@ -32,14 +33,19 @@ const webhookController = {
 
             console.log('🔄 Processing signal for Telegram...');
 
-            // Format for binary options signals
-            const message = webhookController.formatSignalMessage(alertData);
-            const success = await telegramService.sendToChannel(alertData.chat_id, message);
-
-            if (success) {
-                console.log('✅ Signal sent to Telegram');
+            // Check if this is a trade result (WIN/LOSS) - USE NEW CHART LOGIC
+            const signal = (alertData.signal || '').toUpperCase();
+            console.log(`🔍 Detected signal: "${signal}"`);
+            
+            if (signal.includes('WIN') || signal.includes('LOSS') || signal.includes('WON') || signal.includes('LOST')) {
+                console.log('🎯 Processing as TRADE RESULT WITH CHART');
+                await webhookController.processTradeResultWithChart(alertData);
             } else {
-                console.log('❌ Failed to send to Telegram');
+                console.log('⚡ Processing as NEW SIGNAL (text only)');
+                const message = webhookController.formatNewSignal(alertData);
+                const success = await telegramService.sendToChannel(alertData.chat_id, message);
+                if (success) console.log('✅ Signal sent to Telegram');
+                else console.log('❌ Failed to send to Telegram');
             }
             
         } catch (error) {
@@ -47,19 +53,34 @@ const webhookController = {
         }
     },
 
-    formatSignalMessage(alertData) {
-        const signal = (alertData.signal || '').toUpperCase(); // CONVERT TO UPPERCASE
-        const ticker = alertData.ticker || '';
-        
-        console.log(`🔍 Detected signal: "${signal}"`);
-        
-        // Check if this is a TRADE RESULT (WIN/LOSS) or NEW SIGNAL
-        if (signal.includes('WIN') || signal.includes('LOSS') || signal.includes('WON') || signal.includes('LOST')) {
-            console.log('🎯 Formatting as TRADE RESULT');
-            return webhookController.formatTradeResult(alertData);
-        } else {
-            console.log('⚡ Formatting as NEW SIGNAL');
-            return webhookController.formatNewSignal(alertData);
+    async processTradeResultWithChart(alertData) {
+        try {
+            console.log('🎯 Processing trade result with chart...');
+            
+            // 1. Generate price movement chart
+            const chartBuffer = await realChartService.generateTradeChart(alertData.ticker, 5);
+            
+            // 2. Format trade result message
+            const message = webhookController.formatTradeResult(alertData);
+            
+            // 3. Send to Telegram
+            if (chartBuffer) {
+                // Send with chart image
+                const success = await telegramService.sendPhotoToChannel(alertData.chat_id, chartBuffer, message);
+                if (success) console.log('✅ Trade result with chart sent to Telegram');
+                else console.log('❌ Failed to send trade result with chart');
+            } else {
+                // Fallback: send text only if chart fails
+                const success = await telegramService.sendToChannel(alertData.chat_id, message);
+                if (success) console.log('✅ Trade result sent (no chart)');
+                else console.log('❌ Failed to send trade result');
+            }
+            
+        } catch (error) {
+            console.error('❌ Trade result processing error:', error);
+            // Fallback to text only
+            const message = webhookController.formatTradeResult(alertData);
+            await telegramService.sendToChannel(alertData.chat_id, message);
         }
     },
 
