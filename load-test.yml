@@ -1,0 +1,14 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - duration: 60
+      arrivalRate: 10  # 10 requests per second
+scenarios:
+  - flow:
+    - post:
+        url: '/webhook/tradingview'
+        json:
+          chat_id: "-1003401955142"
+          signal: "BUY"
+          ticker: "EUR/USD"
+          price: "1.0850"
