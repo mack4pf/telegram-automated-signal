@@ -31,37 +31,51 @@ class RedisService {
         }
     }
 
-    // ADD THIS FUNCTION - Set system state (active/inactive)
-    async setSystemState(isActive) {
+    // ADD THESE MISSING METHODS:
+
+    // Set key-value pair
+    async set(key, value) {
         if (!this.isConnected) {
-            console.log('⚠️  Redis not connected - cannot set state');
+            console.log('⚠️  Redis not connected - cannot set value');
             return false;
         }
         
         try {
-            await this.client.set('system:active', isActive ? 'true' : 'false');
-            console.log(`📊 System state set to: ${isActive}`);
+            await this.client.set(key, value);
+            console.log(`💾 Redis SET: ${key} = ${value}`);
             return true;
         } catch (error) {
-            console.error('❌ Error setting system state:', error);
+            console.error('❌ Redis set error:', error);
             return false;
         }
     }
 
-    // ADD THIS FUNCTION - Get system state
-    async getSystemState() {
+    // Get value by key
+    async get(key) {
         if (!this.isConnected) {
-            console.log('⚠️  Redis not connected - defaulting to active');
-            return true; // Default to active if Redis down
+            console.log('⚠️  Redis not connected - returning default');
+            return null;
         }
         
         try {
-            const state = await this.client.get('system:active');
-            return state === 'true'; // Convert to boolean
+            const value = await this.client.get(key);
+            console.log(`🔍 Redis GET: ${key} = ${value}`);
+            return value;
         } catch (error) {
-            console.error('❌ Error getting system state:', error);
-            return true; // Default to active on error
+            console.error('❌ Redis get error:', error);
+            return null;
         }
+    }
+
+    // Set system state (active/inactive)
+    async setSystemState(isActive) {
+        return await this.set('system:active', isActive ? 'true' : 'false');
+    }
+
+    // Get system state
+    async getSystemState() {
+        const state = await this.get('system:active');
+        return state === 'true';
     }
 
     // Check if Redis is ready
