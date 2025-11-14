@@ -1,6 +1,6 @@
 const redisService = require('../services/redis.service');
 const telegramService = require('../services/telegram.service');
-const realChartService = require('../services/realChart.service');
+const realTradeResultService = require('../services/realChart.service');
 
 // Use a simple object instead of class to avoid "this" issues
 const webhookController = {
@@ -33,15 +33,24 @@ const webhookController = {
 
             console.log('🔄 Processing signal for Telegram...');
 
-            // Check if this is a trade result (WIN/LOSS) - USE NEW CHART LOGIC
             const signal = (alertData.signal || '').toUpperCase();
             console.log(`🔍 Detected signal: "${signal}"`);
             
             if (signal.includes('WIN') || signal.includes('LOSS') || signal.includes('WON') || signal.includes('LOST')) {
                 console.log('🎯 Processing as TRADE RESULT WITH CHART');
-                await webhookController.processTradeResultWithChart(alertData);
+                
+                // GET ORIGINAL SIGNAL FROM REDIS
+                const originalSignal = await redisService.get(`${alertData.ticker}:last_signal`) || 'Buy';
+                console.log(`📝 Original signal was: ${originalSignal}`);
+                
+                await webhookController.processTradeResultWithChart(alertData, originalSignal);
             } else {
                 console.log('⚡ Processing as NEW SIGNAL (text only)');
+                
+                // STORE SIGNAL IN REDIS FOR FUTURE RESULTS
+                await redisService.set(`${alertData.ticker}:last_signal`, alertData.signal);
+                console.log(`💾 Stored signal "${alertData.signal}" for ${alertData.ticker}`);
+                
                 const message = webhookController.formatNewSignal(alertData);
                 const success = await telegramService.sendToChannel(alertData.chat_id, message);
                 if (success) console.log('✅ Signal sent to Telegram');
@@ -53,29 +62,25 @@ const webhookController = {
         }
     },
 
-    async processTradeResultWithChart(alertData) {
+    async processTradeResultWithChart(alertData, originalSignal) {
         try {
-            console.log('🎯 Processing trade result with chart...');
+            console.log(`🎯 Processing trade result - Original: ${originalSignal}, Result: ${alertData.signal}`);
             
-            // 1. Determine if it's WIN or LOSS
-            const signal = (alertData.signal || '').toUpperCase();
-            const isWin = signal.includes('WIN') || signal.includes('WON');
-            const currentPrice = parseFloat(alertData.price) || 0;
+            // CORRECT: Pass BOTH signals to the chart service
+            const chartBuffer = await realTradeResultService.generateTradeResult(
+                alertData.ticker, 
+                originalSignal, // "Sell" (from Redis)
+                alertData.signal, // "Loss" (from TradingView webhook)
+                alertData.price
+            );
             
-            // 2. Generate price movement chart with WIN/LOSS colors
-            const chartBuffer = await realChartService.generateResultChart(alertData.ticker, isWin, currentPrice, 5);
-            
-            // 3. Format trade result message
             const message = webhookController.formatTradeResult(alertData);
             
-            // 4. Send to Telegram
             if (chartBuffer) {
-                // Send with chart image
                 const success = await telegramService.sendPhotoToChannel(alertData.chat_id, chartBuffer, message);
                 if (success) console.log('✅ Trade result with chart sent to Telegram');
                 else console.log('❌ Failed to send trade result with chart');
             } else {
-                // Fallback: send text only if chart fails
                 const success = await telegramService.sendToChannel(alertData.chat_id, message);
                 if (success) console.log('✅ Trade result sent (no chart)');
                 else console.log('❌ Failed to send trade result');
@@ -83,7 +88,6 @@ const webhookController = {
             
         } catch (error) {
             console.error('❌ Trade result processing error:', error);
-            // Fallback to text only
             const message = webhookController.formatTradeResult(alertData);
             await telegramService.sendToChannel(alertData.chat_id, message);
         }
