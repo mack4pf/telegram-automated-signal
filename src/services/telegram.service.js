@@ -18,12 +18,12 @@ class TelegramService {
 
         // Add to queue
         this.queue.push({ chatId, message, type: 'text' });
-        
+
         // Process queue if not already processing
         if (!this.isProcessing) {
             this.processQueue();
         }
-        
+
         return true;
     }
 
@@ -35,43 +35,43 @@ class TelegramService {
 
         // Add to queue
         this.queue.push({ chatId, photoBuffer, caption, type: 'photo' });
-        
+
         // Process queue if not already processing
         if (!this.isProcessing) {
             this.processQueue();
         }
-        
+
         return true;
     }
 
     async processQueue() {
         if (this.isProcessing || this.queue.length === 0) return;
-        
+
         this.isProcessing = true;
-        
+
         while (this.queue.length > 0) {
             const item = this.queue[0];
-            
+
             // Rate limiting: wait 1 second between messages
             const now = Date.now();
             const timeSinceLastMessage = now - this.lastSentTime;
             if (timeSinceLastMessage < 1000) {
                 await new Promise(resolve => setTimeout(resolve, 1000 - timeSinceLastMessage));
             }
-            
+
             try {
                 if (item.type === 'text') {
                     await this.sendTextMessage(item.chatId, item.message);
                 } else if (item.type === 'photo') {
                     await this.sendPhotoMessage(item.chatId, item.photoBuffer, item.caption);
                 }
-                
+
                 this.lastSentTime = Date.now();
                 this.queue.shift(); // Remove from queue after success
-                
+
             } catch (error) {
                 console.error('❌ Telegram send error:', error.response?.data || error.message);
-                
+
                 if (error.response?.status === 429) {
                     // Rate limited - wait and retry
                     const retryAfter = error.response?.data?.parameters?.retry_after || 5;
@@ -84,13 +84,13 @@ class TelegramService {
                 }
             }
         }
-        
+
         this.isProcessing = false;
     }
 
     async sendTextMessage(chatId, message) {
         const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
-        
+
         const response = await axios.post(url, {
             chat_id: chatId,
             text: message,
@@ -105,7 +105,7 @@ class TelegramService {
 
     async sendPhotoMessage(chatId, photoBuffer, caption) {
         const url = `https://api.telegram.org/bot${this.botToken}/sendPhoto`;
-        
+
         const formData = new FormData();
         formData.append('chat_id', chatId);
         formData.append('photo', photoBuffer, { filename: 'chart.png' });
@@ -124,6 +124,59 @@ class TelegramService {
     // Check if Telegram is configured
     isConfigured() {
         return this.isEnabled;
+    }
+
+    // Get all configured channel IDs
+    getChannelIds() {
+        const channelIds = process.env.TELEGRAM_CHANNEL_IDS;
+        if (!channelIds) {
+            console.log('⚠️  No TELEGRAM_CHANNEL_IDS configured');
+            return [];
+        }
+
+        // Support comma-separated channel IDs
+        return channelIds
+            .split(',')
+            .map(id => id.trim())
+            .filter(id => id.length > 0);
+    }
+
+    // Broadcast message to all configured channels
+    async broadcastToAllChannels(message) {
+        const channelIds = this.getChannelIds();
+
+        if (channelIds.length === 0) {
+            console.log('⚠️  No channels configured for broadcast');
+            return false;
+        }
+
+        console.log(`📢 Broadcasting to ${channelIds.length} channel(s): ${channelIds.join(', ')}`);
+
+        // Send to all channels
+        for (const chatId of channelIds) {
+            await this.sendToChannel(chatId, message);
+        }
+
+        return true;
+    }
+
+    // Broadcast photo to all configured channels
+    async broadcastPhotoToAllChannels(photoBuffer, caption) {
+        const channelIds = this.getChannelIds();
+
+        if (channelIds.length === 0) {
+            console.log('⚠️  No channels configured for broadcast');
+            return false;
+        }
+
+        console.log(`📢 Broadcasting photo to ${channelIds.length} channel(s): ${channelIds.join(', ')}`);
+
+        // Send to all channels
+        for (const chatId of channelIds) {
+            await this.sendPhotoToChannel(chatId, photoBuffer, caption);
+        }
+
+        return true;
     }
 }
 
