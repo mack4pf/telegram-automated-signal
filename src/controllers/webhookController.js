@@ -1,6 +1,7 @@
 const redisService = require('../services/redis.service');
 const telegramService = require('../services/telegram.service');
 const realTradeResultService = require('../services/realChart.service');
+const forwardingService = require('../services/forwarding.service');
 
 // Use a simple object instead of class to avoid "this" issues
 const webhookController = {
@@ -56,6 +57,9 @@ const webhookController = {
                 const success = await telegramService.broadcastToAllChannels(message);
                 if (success) console.log('✅ Signal broadcast to all channels');
                 else console.log('❌ Failed to broadcast to channels');
+
+                // FORWARD to external platform
+                forwardingService.forwardSignal(alertData);
             }
 
         } catch (error) {
@@ -88,6 +92,9 @@ const webhookController = {
                 if (success) console.log('✅ Trade result broadcast to all channels (no chart)');
                 else console.log('❌ Failed to broadcast trade result');
             }
+
+            // FORWARD to external platform
+            forwardingService.forwardSignal(alertData);
 
         } catch (error) {
             console.error('❌ Trade result processing error:', error);
@@ -140,7 +147,9 @@ ${flag} <b>${pair}</b>
         return `${resultEmoji} <b>TRADE RESULT : ${resultText}</b> 
 
 📊 <b>${pair}</b>
-💰 <b>${alertData.price || 'N/A'}</b>
+
+<b>Copy Trade and Trade smater</b>
+<a href="https://expertoption-track.com/511427857">Click to Start copy trade</a>
 
 `;
     },
