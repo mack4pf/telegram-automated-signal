@@ -4,8 +4,14 @@ const redisService = require('./redis.service');
 class BotService {
     constructor() {
         this.bot = null;
-        this.adminId = process.env.ADMIN_CHAT_ID;
+        this.adminIds = this.getAdminIds(); // Parse multiple IDs
         this.initialize();
+    }
+
+    getAdminIds() {
+        const adminEnv = process.env.ADMIN_CHAT_ID;
+        if (!adminEnv) return [];
+        return adminEnv.split(',').map(id => id.trim());
     }
 
     initialize() {
@@ -26,7 +32,7 @@ class BotService {
         });
 
         console.log('✅ Telegram Bot started with admin controls');
-        console.log('👤 Admin ID:', this.adminId);
+        console.log('👤 Admin IDs:', this.adminIds.join(', '));
     }
 
     async handleMessage(msg) {
@@ -38,12 +44,9 @@ class BotService {
 
         console.log(`📨 Received message from ${chatId}: ${text}`);
 
-        // Only allow admin to control bot (simple security)
-        // In real multi-channel setup, we might want to allow commands in any admin-authorized channel
-        // But for critical commands (stop/start/admin), we check against env.ADMIN_CHAT_ID if set.
-        if (this.adminId && chatId.toString() !== this.adminId) {
+        // Check against array of allowed admin IDs
+        if (this.adminIds.length > 0 && !this.adminIds.includes(chatId.toString())) {
             console.log(`❌ Unauthorized access from: ${chatId}`);
-            // Silent ignorance for non-admins to avoid spamming groups
             return;
         }
 
