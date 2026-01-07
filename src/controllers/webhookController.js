@@ -8,6 +8,9 @@ const webhookController = {
     async handleTradingViewAlert(req, res) {
         console.log('📨 Received TradingView webhook:', req.body);
 
+        // Inject strategy into payload
+        req.body.strategy = req.params.strategy || 'vip';
+
         try {
             // 1. Immediately respond to TradingView
             res.status(200).json({ status: 'received', processed: true });
@@ -32,31 +35,37 @@ const webhookController = {
                 return;
             }
 
-            console.log('🔄 Processing signal for Telegram...');
+            const strategy = alertData.strategy || 'vip';
+            console.log(`🔄 Processing signal for [${strategy.toUpperCase()}] strategy...`);
 
             const signal = (alertData.signal || '').toUpperCase();
             console.log(`🔍 Detected signal: "${signal}"`);
+
+            // Use legacy key for 'vip' to preserve open trades, namespace others
+            const redisKey = strategy === 'vip'
+                ? `${alertData.ticker}:last_signal`
+                : `${strategy}:${alertData.ticker}:last_signal`;
 
             if (signal.includes('WIN') || signal.includes('LOSS') || signal.includes('WON') || signal.includes('LOST')) {
                 console.log('🎯 Processing as TRADE RESULT WITH CHART');
 
                 // GET ORIGINAL SIGNAL FROM REDIS
-                const originalSignal = await redisService.get(`${alertData.ticker}:last_signal`) || 'Buy';
+                const originalSignal = await redisService.get(redisKey) || 'Buy';
                 console.log(`📝 Original signal was: ${originalSignal}`);
 
-                await webhookController.processTradeResultWithChart(alertData, originalSignal);
+                await webhookController.processTradeResultWithChart(alertData, originalSignal, strategy);
             } else {
                 console.log('⚡ Processing as NEW SIGNAL (text only)');
 
                 // STORE SIGNAL IN REDIS FOR FUTURE RESULTS
-                await redisService.set(`${alertData.ticker}:last_signal`, alertData.signal);
-                console.log(`💾 Stored signal "${alertData.signal}" for ${alertData.ticker}`);
+                await redisService.set(redisKey, alertData.signal);
+                console.log(`💾 Stored signal "${alertData.signal}" for ${alertData.ticker} (Key: ${redisKey})`);
 
                 const message = webhookController.formatNewSignal(alertData);
-                // BROADCAST to all configured channels instead of just one
-                const success = await telegramService.broadcastToAllChannels(message);
-                if (success) console.log('✅ Signal broadcast to all channels');
-                else console.log('❌ Failed to broadcast to channels');
+                // BROADCAST to configured channels for this strategy
+                const success = await telegramService.broadcastToAllChannels(message, strategy);
+                if (success) console.log(`✅ Signal broadcast to [${strategy}] channels`);
+                else console.log(`❌ Failed to broadcast to [${strategy}] channels`);
 
                 // FORWARD to external platform
                 forwardingService.forwardSignal(alertData);
@@ -67,7 +76,7 @@ const webhookController = {
         }
     },
 
-    async processTradeResultWithChart(alertData, originalSignal) {
+    async processTradeResultWithChart(alertData, originalSignal, strategy) {
         try {
             console.log(`🎯 Processing trade result - Original: ${originalSignal}, Result: ${alertData.signal}`);
 
@@ -83,14 +92,14 @@ const webhookController = {
 
             if (chartBuffer) {
                 // BROADCAST to all configured channels
-                const success = await telegramService.broadcastPhotoToAllChannels(chartBuffer, message);
-                if (success) console.log('✅ Trade result with chart broadcast to all channels');
-                else console.log('❌ Failed to broadcast trade result with chart');
+                const success = await telegramService.broadcastPhotoToAllChannels(chartBuffer, message, strategy);
+                if (success) console.log(`✅ Trade result with chart broadcast to [${strategy}] channels`);
+                else console.log(`❌ Failed to broadcast trade result with chart`);
             } else {
                 // BROADCAST to all configured channels
-                const success = await telegramService.broadcastToAllChannels(message);
-                if (success) console.log('✅ Trade result broadcast to all channels (no chart)');
-                else console.log('❌ Failed to broadcast trade result');
+                const success = await telegramService.broadcastToAllChannels(message, strategy);
+                if (success) console.log(`✅ Trade result broadcast to [${strategy}] channels (no chart)`);
+                else console.log(`❌ Failed to broadcast trade result`);
             }
 
             // FORWARD to external platform
@@ -100,7 +109,7 @@ const webhookController = {
             console.error('❌ Trade result processing error:', error);
             const message = webhookController.formatTradeResult(alertData);
             // Fallback: broadcast text only
-            await telegramService.broadcastToAllChannels(message);
+            await telegramService.broadcastToAllChannels(message, strategy);
         }
     },
 
@@ -126,6 +135,9 @@ ${flag} <b>${pair}</b>
 🔔 <b>${signal.toUpperCase()}</b>
 ⏰ <b>${timeframe}</b>
 
+<b>Copy Trade and Trade smater</b>
+<a href="https://expertoption-track.com/511427857">Click to Start copy trade</a>
+
 `;
     },
 
@@ -147,9 +159,6 @@ ${flag} <b>${pair}</b>
         return `${resultEmoji} <b>TRADE RESULT : ${resultText}</b> 
 
 📊 <b>${pair}</b>
-
-<b>Copy Trade and Trade smater</b>
-<a href="https://expertoption-track.com/511427857">Click to Start copy trade</a>
 
 `;
     },

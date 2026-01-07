@@ -39,7 +39,7 @@ class RedisService {
             console.log('⚠️  Redis not connected - cannot set value');
             return false;
         }
-        
+
         try {
             await this.client.set(key, value);
             console.log(`💾 Redis SET: ${key} = ${value}`);
@@ -56,7 +56,7 @@ class RedisService {
             console.log('⚠️  Redis not connected - returning default');
             return null;
         }
-        
+
         try {
             const value = await this.client.get(key);
             console.log(`🔍 Redis GET: ${key} = ${value}`);
@@ -81,6 +81,68 @@ class RedisService {
     // Check if Redis is ready
     isReady() {
         return this.isConnected;
+    }
+
+    // --- Channel Management for Multiple Strategies ---
+
+    // Add channel to a strategy (e.g., 'vip', 'gold')
+    async addChannel(strategy, channelId) {
+        if (!this.isConnected) return false;
+        try {
+            const key = `channels:${strategy.toLowerCase()}`;
+            await this.client.sAdd(key, channelId.toString());
+            console.log(`💾 Redis: Added channel ${channelId} to strategy '${strategy}'`);
+            return true;
+        } catch (error) {
+            console.error(`❌ Failed to add channel to ${strategy}:`, error);
+            return false;
+        }
+    }
+
+    // Remove channel from a strategy
+    async removeChannel(strategy, channelId) {
+        if (!this.isConnected) return false;
+        try {
+            const key = `channels:${strategy.toLowerCase()}`;
+            await this.client.sRem(key, channelId.toString());
+            console.log(`🗑️ Redis: Removed channel ${channelId} from strategy '${strategy}'`);
+            return true;
+        } catch (error) {
+            console.error(`❌ Failed to remove channel from ${strategy}:`, error);
+            return false;
+        }
+    }
+
+    // Get all channels for a strategy
+    async getChannels(strategy) {
+        if (!this.isConnected) return [];
+        try {
+            const key = `channels:${strategy.toLowerCase()}`;
+            const channels = await this.client.sMembers(key);
+            return channels || [];
+        } catch (error) {
+            console.error(`❌ Failed to get channels for ${strategy}:`, error);
+            return [];
+        }
+    }
+
+    // Get all active strategies and their channel counts
+    async getAllStrategies() {
+        if (!this.isConnected) return {};
+        try {
+            const keys = await this.client.keys('channels:*');
+            const strategies = {};
+
+            for (const key of keys) {
+                const strategyName = key.replace('channels:', '');
+                const count = await this.client.sCard(key);
+                strategies[strategyName] = count;
+            }
+            return strategies;
+        } catch (error) {
+            console.error('❌ Failed to get all strategies:', error);
+            return {};
+        }
     }
 }
 

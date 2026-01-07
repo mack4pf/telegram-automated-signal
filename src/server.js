@@ -11,7 +11,7 @@ app.use(express.json());
 const initializeRedis = async () => {
     console.log('🔄 Connecting to Redis...');
     const connected = await redisService.connect();
-    
+
     if (connected) {
         console.log('✅ Redis connected successfully');
         // Set default state - bot starts as ACTIVE
@@ -25,11 +25,19 @@ const initializeRedis = async () => {
 initializeRedis();
 
 // TradingView Webhook Endpoint
-app.post('/webhook/tradingview', webhookController.handleTradingViewAlert);
+// TradingView Webhook Endpoint (Legacy & Dynamic)
+// 1. Legacy support (defaults to 'vip')
+app.post('/webhook/tradingview', (req, res, next) => {
+    req.params.strategy = 'vip'; // Force default strategy
+    next();
+}, webhookController.handleTradingViewAlert);
+
+// 2. Dynamic Strategy Support (e.g., /webhook/gold, /webhook/silver)
+app.post('/webhook/:strategy', webhookController.handleTradingViewAlert);
 
 // Basic route - now shows Redis status
 app.get('/', (req, res) => {
-    res.json({ 
+    res.json({
         status: '✅ Server is running',
         redis: redisService.isReady() ? '✅ Connected' : '❌ Disconnected',
         timestamp: new Date().toISOString()
@@ -38,7 +46,7 @@ app.get('/', (req, res) => {
 
 // Health check with Redis status
 app.get('/health', (req, res) => {
-    res.status(200).json({ 
+    res.status(200).json({
         status: 'healthy',
         redis_connected: redisService.isReady(),
         uptime: process.uptime(),
