@@ -5,6 +5,16 @@ class BotService {
     constructor() {
         this.bot = null;
         this.adminIds = this.getAdminIds(); // Parse multiple IDs
+
+        // Explicitly bind methods to ensure 'this' context is preserved
+        this.handleMessage = this.handleMessage.bind(this);
+        this.handleCallback = this.handleCallback.bind(this);
+        this.startBot = this.startBot.bind(this);
+        this.stopBot = this.stopBot.bind(this);
+        this.getStatus = this.getStatus.bind(this);
+        this.sendAdminMenu = this.sendAdminMenu.bind(this);
+        this.addChannelToStrategy = this.addChannelToStrategy.bind(this);
+
         this.initialize();
     }
 
@@ -22,17 +32,21 @@ class BotService {
 
         this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
-        this.bot.on('message', (msg) => {
-            this.handleMessage(msg);
-        });
+        // Use bound method directly
+        this.bot.on('message', this.handleMessage);
 
         // Handle button clicks
-        this.bot.on('callback_query', (query) => {
-            this.handleCallback(query);
-        });
+        this.bot.on('callback_query', this.handleCallback);
 
         console.log('✅ Telegram Bot started with admin controls');
         console.log('👤 Admin IDs:', this.adminIds.join(', '));
+
+        // Debug: Log available methods
+        console.log('🔧 BotService Methods Check:', {
+            startBot: typeof this.startBot,
+            stopBot: typeof this.stopBot,
+            getStatus: typeof this.getStatus
+        });
     }
 
     async handleMessage(msg) {
@@ -50,16 +64,21 @@ class BotService {
             return;
         }
 
-        if (text === '/start') {
-            await this.startBot(chatId);
-        } else if (text === '/stop') {
-            await this.stopBot(chatId);
-        } else if (text === '/status') {
-            await this.getStatus(chatId);
-        } else if (text === '/admin') {
-            await this.sendAdminMenu(chatId);
-        } else {
-            // Check for reply-to interactions or other logic here
+        try {
+            if (text === '/start') {
+                await this.startBot(chatId);
+            } else if (text === '/stop') {
+                await this.stopBot(chatId);
+            } else if (text === '/status') {
+                await this.getStatus(chatId);
+            } else if (text === '/admin') {
+                await this.sendAdminMenu(chatId);
+            } else {
+                // Check for reply-to interactions or other logic here
+            }
+        } catch (error) {
+            console.error('❌ Error handling message:', error);
+            this.bot.sendMessage(chatId, '❌ An error occurred processing your command.');
         }
     }
 
