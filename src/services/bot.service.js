@@ -234,6 +234,9 @@ class BotService {
                     { text: "GOLD", callback_data: `${prefix}gold` }
                 ],
                 [
+                    { text: "SILVER", callback_data: `${prefix}silver` }
+                ],
+                [
                     { text: "🔙 Cancel", callback_data: "refresh" } // Just reusing refresh/cancel logic
                 ]
             ]
