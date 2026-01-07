@@ -99,7 +99,6 @@ class RedisService {
         }
     }
 
-    // Remove channel from a strategy
     async removeChannel(strategy, channelId) {
         if (!this.isConnected) return false;
         try {
@@ -112,6 +111,8 @@ class RedisService {
             return false;
         }
     }
+
+
 
     // Get all channels for a strategy
     async getChannels(strategy) {

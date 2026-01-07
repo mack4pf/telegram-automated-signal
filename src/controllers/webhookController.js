@@ -135,7 +135,6 @@ ${flag} <b>${pair}</b>
 🔔 <b>${signal.toUpperCase()}</b>
 ⏰ <b>${timeframe}</b>
 
-<b>Copy Trade and Trade smater</b>
 <a href="https://expertoption-track.com/511427857">Click to Start copy trade</a>
 
 `;

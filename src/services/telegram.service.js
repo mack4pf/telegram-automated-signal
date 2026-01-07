@@ -134,7 +134,8 @@ class TelegramService {
         const response = await axios.post(url, {
             chat_id: chatId,
             text: message,
-            parse_mode: 'HTML'
+            parse_mode: 'HTML',
+            disable_web_page_preview: true
         }, { timeout: 10000 });
         console.log(`✅ Text message sent to ${chatId}`);
         return response.data;
