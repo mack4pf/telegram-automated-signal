@@ -63,6 +63,30 @@ class BotService {
         }
     }
 
+    async startBot(chatId) {
+        await redisService.setSystemState(true);
+        this.bot.sendMessage(chatId, '✅ <b>System STARTED</b>\nSignals will be processed.', { parse_mode: 'HTML' });
+        console.log('✅ System started by admin');
+    }
+
+    async stopBot(chatId) {
+        await redisService.setSystemState(false);
+        this.bot.sendMessage(chatId, '🛑 <b>System STOPPED</b>\nSignals will be ignored.', { parse_mode: 'HTML' });
+        console.log('🛑 System stopped by admin');
+    }
+
+    async getStatus(chatId) {
+        const isActive = await redisService.getSystemState();
+        const statusText = isActive ? '✅ ACTIVE' : '🛑 STOPPED';
+        const redisStatus = redisService.isReady() ? '🟢 Connected' : '🔴 Disconnected';
+
+        const message = `📊 <b>System Status</b>\n\n` +
+            `🤖 Bot State: ${statusText}\n` +
+            `💾 Redis: ${redisStatus}`;
+
+        this.bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+    }
+
     // --- Interactive Admin Menu ---
 
     async sendAdminMenu(chatId) {
