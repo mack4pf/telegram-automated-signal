@@ -5,20 +5,20 @@ class RealTradeResultService {
     async generateTradeResult(ticker, originalSignal, resultSignal, tradePrice, durationMinutes = 5) {
         try {
             console.log(`📊 Generating trade result for: ${ticker} - ${originalSignal} → ${resultSignal}`);
-            
+
             // 1. Get REAL price data for last 5 minutes with 30-second intervals
             const priceData = await this.getRealPriceData(ticker, durationMinutes);
-            
+
             if (!priceData || priceData.length === 0) {
                 throw new Error('No real price data available');
             }
-            
+
             // 2. Generate the trade result image with exact design from picture
             const resultBuffer = await this.generateTradeResultImage(priceData, ticker, originalSignal, resultSignal, tradePrice);
-            
+
             console.log('✅ Trade result generated');
             return resultBuffer;
-            
+
         } catch (error) {
             console.error('❌ Trade result generation error:', error.message);
             return null;
@@ -28,36 +28,40 @@ class RealTradeResultService {
     async getRealPriceData(ticker, durationMinutes) {
         try {
             console.log(`🔄 Fetching real Yahoo data for: ${ticker}`);
-            const symbol = this.formatSymbol(ticker) + '=X';
+            let symbol = this.formatSymbol(ticker);
+            // Append =X only if it's a currency pair and doesn't have =F or =X already
+            if (!symbol.includes('=') && !symbol.includes('^')) {
+                symbol += '=X';
+            }
             const response = await axios.get(
                 `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1d&interval=1m`,
                 { timeout: 10000 }
             );
-            
+
             if (!response.data.chart.result[0]) {
                 throw new Error('No data from Yahoo');
             }
-            
+
             const result = response.data.chart.result[0];
             const prices = result.indicators.quote[0].close;
             const timestamps = result.timestamp;
-            
+
             // Get last X minutes of valid data
             const validData = prices
-                .map((price, index) => ({ 
-                    price, 
+                .map((price, index) => ({
+                    price,
                     timestamp: timestamps[index] * 1000 // Convert to milliseconds
                 }))
                 .filter(item => item.price !== null)
                 .slice(-durationMinutes);
-            
+
             if (validData.length === 0) {
                 throw new Error('No valid price data found');
             }
-            
+
             // Generate 30-second intervals from 1-minute Yahoo data
             return this.generate30SecondIntervals(validData);
-            
+
         } catch (error) {
             console.error('❌ Yahoo data fetch failed:', error.message);
             throw new Error('Could not fetch real price data');
@@ -67,21 +71,21 @@ class RealTradeResultService {
     generate30SecondIntervals(minuteData) {
         const intervals = [];
         const now = new Date();
-        
+
         // Generate 30-second intervals for the last 5 minutes (10 data points)
         for (let i = 0; i < 10; i++) {
             const time = new Date(now);
             time.setSeconds(time.getSeconds() - 270 + (i * 30)); // 5 minutes back + 30-sec increments
-            
+
             const hours = time.getHours().toString().padStart(2, '0');
             const minutes = time.getMinutes().toString().padStart(2, '0');
             const seconds = time.getSeconds().toString().padStart(2, '0');
-            
+
             // Find the closest minute data point and interpolate
             const targetTime = time.getTime();
             let closestData = minuteData[0];
             let minDiff = Math.abs(targetTime - minuteData[0].timestamp);
-            
+
             for (const data of minuteData) {
                 const diff = Math.abs(targetTime - data.timestamp);
                 if (diff < minDiff) {
@@ -89,18 +93,18 @@ class RealTradeResultService {
                     closestData = data;
                 }
             }
-            
+
             // Add some realistic micro-fluctuations based on position in minute
             const fluctuation = (Math.random() - 0.5) * 0.0002; // Small realistic fluctuation
             const price = parseFloat(closestData.price) + fluctuation;
-            
+
             intervals.push({
                 time: `${hours}:${minutes}:${seconds}`,
                 price: price,
                 timestamp: targetTime
             });
         }
-        
+
         return intervals;
     }
 
@@ -114,7 +118,7 @@ class RealTradeResultService {
         const backgroundColor = '#1a1a1a';
         const textColor = '#ffffff';
         const secondaryColor = '#888888';
-        
+
         // CORRECT: Color based on RESULT (Win/Loss), not original signal
         const isWin = resultSignal.toUpperCase().includes('WIN') || resultSignal.toUpperCase().includes('WON');
         const accentColor = isWin ? '#4CAF50' : '#ff4444'; // Green for Win, Red for Loss
@@ -137,7 +141,7 @@ class RealTradeResultService {
         ctx.font = 'bold 16px Arial';
         ctx.fillStyle = secondaryColor;
         ctx.fillText('- Date', 30, 120);
-        
+
         ctx.font = '14px Arial';
         ctx.fillStyle = textColor;
         // Show only 7 time points like in the picture (17:52:00 to 17:55:00)
@@ -150,12 +154,12 @@ class RealTradeResultService {
         ctx.font = 'bold 16px Arial';
         ctx.fillStyle = secondaryColor;
         ctx.fillText('- Signal', 200, 120);
-        
+
         ctx.font = '14px Arial';
         ctx.fillStyle = accentColor;
         // Show the signal flow: Original → Result
         ctx.fillText(`${originalSignal} → ${resultSignal}`, 220, 145);
-        
+
         // Show additional deal entries
         for (let i = 1; i < 4; i++) {
             ctx.fillText('- Deal', 220, 145 + (i * 25));
@@ -239,7 +243,7 @@ class RealTradeResultService {
         priceData.forEach((point, index) => {
             const pointX = x + (index / (priceData.length - 1)) * width;
             const pointY = y + height - ((point.price - minPrice) / priceRange) * height;
-            
+
             index === 0 ? ctx.moveTo(pointX, pointY) : ctx.lineTo(pointX, pointY);
         });
         ctx.stroke();
@@ -249,7 +253,7 @@ class RealTradeResultService {
         ctx.beginPath();
         ctx.arc(x, y + height - ((priceData[0].price - minPrice) / priceRange) * height, 4, 0, Math.PI * 2);
         ctx.fill();
-        
+
         ctx.beginPath();
         ctx.arc(x + width, y + height - ((priceData[priceData.length - 1].price - minPrice) / priceRange) * height, 4, 0, Math.PI * 2);
         ctx.fill();
@@ -269,10 +273,10 @@ class RealTradeResultService {
     formatSymbol(ticker) {
         const pairs = {
             'EUR/USD': 'EURUSD', 'EURUSD': 'EURUSD',
-            'GBP/USD': 'GBPUSD', 'GBPUSD': 'GBPUSD', 
+            'GBP/USD': 'GBPUSD', 'GBPUSD': 'GBPUSD',
             'USD/JPY': 'USDJPY', 'USDJPY': 'USDJPY',
             'AUD/USD': 'AUDUSD', 'AUDUSD': 'AUDUSD',
-            'XAU/USD': 'XAUUSD', 'XAUUSD': 'XAUUSD',
+            'XAU/USD': 'GC=F', 'XAUUSD': 'GC=F',
             'USD/CAD': 'USDCAD', 'USDCAD': 'USDCAD'
         };
         return pairs[ticker.toUpperCase()] || ticker.replace('/', '');
