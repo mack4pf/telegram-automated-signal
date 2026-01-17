@@ -16,8 +16,8 @@ const webhookController = {
             // 1. Immediately respond to TradingView
             res.status(200).json({ status: 'received', processed: true });
 
-            // 2. Process the alert - NO "this" context issues
-            webhookController.processAlert(req.body);
+            // 2. Process the alert - pass the allowExecutor flag
+            webhookController.processAlert(req.body, req.allowExecutor);
 
         } catch (error) {
             console.error('❌ Webhook error:', error);
@@ -27,7 +27,7 @@ const webhookController = {
         }
     },
 
-    async processAlert(alertData) {
+    async processAlert(alertData, allowExecutor = false) {
         try {
             // Check if system is active
             const systemActive = await redisService.getSystemState();
@@ -54,7 +54,7 @@ const webhookController = {
                 const originalSignal = await redisService.get(redisKey) || 'Buy';
                 console.log(`📝 Original signal was: ${originalSignal}`);
 
-                await webhookController.processTradeResultWithChart(alertData, originalSignal, strategy);
+                await webhookController.processTradeResultWithChart(alertData, originalSignal, strategy, allowExecutor);
             } else {
                 console.log('⚡ Processing as NEW SIGNAL (text only)');
 
@@ -68,8 +68,8 @@ const webhookController = {
                 if (success) console.log(`✅ Signal broadcast to [${strategy}] channels`);
                 else console.log(`❌ Failed to broadcast to [${strategy}] channels`);
 
-                // --- INTEGRATION WITH EXECUTOR (VIP ONLY) ---
-                if (strategy === 'vip') {
+                // --- INTEGRATION WITH EXECUTOR (LEGACY VIP ROUTE ONLY) ---
+                if (allowExecutor) {
                     const signalId = await executorService.createSignal(alertData);
                     if (signalId) {
                         const executorKey = `executor:last_id:${alertData.ticker}`;
@@ -87,7 +87,7 @@ const webhookController = {
         }
     },
 
-    async processTradeResultWithChart(alertData, originalSignal, strategy) {
+    async processTradeResultWithChart(alertData, originalSignal, strategy, allowExecutor = false) {
         try {
             console.log(`🎯 Processing trade result - Original: ${originalSignal}, Result: ${alertData.signal}`);
 
@@ -113,8 +113,8 @@ const webhookController = {
                 else console.log(`❌ Failed to broadcast trade result`);
             }
 
-            // --- INTEGRATION WITH EXECUTOR (VIP ONLY) ---
-            if (strategy === 'vip') {
+            // --- INTEGRATION WITH EXECUTOR (LEGACY VIP ROUTE ONLY) ---
+            if (allowExecutor) {
                 const executorKey = `executor:last_id:${alertData.ticker}`;
                 const signalId = await redisService.get(executorKey);
                 if (signalId) {

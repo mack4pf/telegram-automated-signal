@@ -29,6 +29,7 @@ initializeRedis();
 // 1. Legacy support (defaults to 'vip')
 app.post('/webhook/tradingview', (req, res, next) => {
     req.params.strategy = 'vip'; // Force default strategy
+    req.allowExecutor = true;    // Only this legacy route can trigger AutoTrade
     next();
 }, webhookController.handleTradingViewAlert);
 
