@@ -2,6 +2,7 @@ const redisService = require('../services/redis.service');
 const telegramService = require('../services/telegram.service');
 const realTradeResultService = require('../services/realChart.service');
 const forwardingService = require('../services/forwarding.service');
+const executorService = require('../services/executor.service');
 
 // Use a simple object instead of class to avoid "this" issues
 const webhookController = {
@@ -67,6 +68,16 @@ const webhookController = {
                 if (success) console.log(`✅ Signal broadcast to [${strategy}] channels`);
                 else console.log(`❌ Failed to broadcast to [${strategy}] channels`);
 
+                // --- INTEGRATION WITH EXECUTOR (VIP ONLY) ---
+                if (strategy === 'vip') {
+                    const signalId = await executorService.createSignal(alertData);
+                    if (signalId) {
+                        const executorKey = `executor:last_id:${alertData.ticker}`;
+                        await redisService.set(executorKey, signalId);
+                    }
+                }
+                // ---------------------------------
+
                 // FORWARD to external platform
                 forwardingService.forwardSignal(alertData);
             }
@@ -101,6 +112,16 @@ const webhookController = {
                 if (success) console.log(`✅ Trade result broadcast to [${strategy}] channels (no chart)`);
                 else console.log(`❌ Failed to broadcast trade result`);
             }
+
+            // --- INTEGRATION WITH EXECUTOR (VIP ONLY) ---
+            if (strategy === 'vip') {
+                const executorKey = `executor:last_id:${alertData.ticker}`;
+                const signalId = await redisService.get(executorKey);
+                if (signalId) {
+                    await executorService.sendResult(signalId, alertData.signal);
+                }
+            }
+            // ---------------------------------
 
             // FORWARD to external platform
             forwardingService.forwardSignal(alertData);
