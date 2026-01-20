@@ -156,7 +156,7 @@ ${flag} <b>${pair}</b>
 🔔 <b>${signal.toUpperCase()}</b>
 ⏰ <b>${timeframe}</b>
 
-<a href="https://expertoption-track.com/511427857">Click to Start copy trade</a>
+<a href="https://affiliate.iqoption.net/redir/?aff=785369&aff_model=revenue&afftrack=">Click to Start copy trade</a>
 
 `;
     },
