@@ -40,6 +40,10 @@ class ExecutorService {
                 timeSeconds = 900;
             }
 
+            if (!alertData.ticker) {
+                console.warn('⚠️ [Executor] Missing ticker in alertData, defaulting to EURUSD as last resort.');
+            }
+
             const payload = {
                 ticker: (alertData.ticker || 'EURUSD').toUpperCase().replace('-OTC', ''), // Force Real Market
                 signal: signalAction,

@@ -7,10 +7,22 @@ const executorService = require('../services/executor.service');
 // Use a simple object instead of class to avoid "this" issues
 const webhookController = {
     async handleTradingViewAlert(req, res) {
-        console.log('📨 Received TradingView webhook:', req.body);
+        // Log the incoming request for debugging
+        console.log(`📨 [${new Date().toISOString()}] Webhook Received:`, {
+            method: req.method,
+            url: req.url,
+            params: req.params,
+            body: req.body
+        });
 
-        // Inject strategy into payload
-        req.body.strategy = req.params.strategy || 'vip';
+        // Ensure we have a body object
+        if (!req.body || Object.keys(req.body).length === 0) {
+            console.warn('⚠️ Warning: Received empty request body. Ticker might default to EURUSD.');
+        }
+
+        // Priority for strategy: 1. Body, 2. URL Param, 3. Default 'vip'
+        const strategy = req.body.strategy || req.params.strategy || 'vip';
+        req.body.strategy = strategy;
 
         try {
             // 1. Immediately respond to TradingView

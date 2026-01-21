@@ -6,6 +6,7 @@ const botService = require('./services/bot.service');
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Initialize Redis connection when server starts
 const initializeRedis = async () => {
@@ -26,9 +27,13 @@ initializeRedis();
 
 // TradingView Webhook Endpoint
 // TradingView Webhook Endpoint (Legacy & Dynamic)
-// 1. Legacy support (defaults to 'vip')
+// 1. Legacy support (defaults to 'vip' ONLY IF strategy is not in body)
 app.post('/webhook/tradingview', (req, res, next) => {
-    req.params.strategy = 'vip'; // Force default strategy
+    // ONLY set strategy to vip if it's not already in the body
+    if (!req.body || !req.body.strategy) {
+        req.body = req.body || {};
+        req.body.strategy = 'vip';
+    }
     req.allowExecutor = true;    // Only this legacy route can trigger AutoTrade
     next();
 }, webhookController.handleTradingViewAlert);
