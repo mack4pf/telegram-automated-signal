@@ -16,7 +16,8 @@ const webhookController = {
         });
 
         // Ensure we have a body object
-        if (!req.body || Object.keys(req.body).length === 0) {
+        req.body = req.body || {};
+        if (Object.keys(req.body).length === 0) {
             console.warn('⚠️ Warning: Received empty request body. Ticker might default to EURUSD.');
         }
 
