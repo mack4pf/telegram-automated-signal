@@ -207,7 +207,7 @@ ${flag} <b>${pair}</b>
         if (signal.includes('30MIN') || signal.includes('30M')) return '30 MINUTES';
 
         // Default to 1 minute if no timeframe detected
-        return '3 MINUTES';
+        return '5 MINUTES';
     }
 };
 
