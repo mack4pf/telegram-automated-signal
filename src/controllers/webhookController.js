@@ -49,16 +49,20 @@ const webhookController = {
                 return;
             }
 
+            // Ensure ticker exists
+            const ticker = (alertData.ticker || 'EURUSD').toUpperCase().replace('/', '');
+            alertData.ticker = ticker;
+
             const strategy = alertData.strategy || 'vip';
-            console.log(`🔄 Processing signal for [${strategy.toUpperCase()}] strategy...`);
+            console.log(`🔄 Processing signal for [${strategy.toUpperCase()}] strategy [${ticker}]...`);
 
             const signal = (alertData.signal || '').toUpperCase();
             console.log(`🔍 Detected signal: "${signal}"`);
 
             // Use legacy key for 'vip' to preserve open trades, namespace others
             const redisKey = strategy === 'vip'
-                ? `${alertData.ticker}:last_signal`
-                : `${strategy}:${alertData.ticker}:last_signal`;
+                ? `${ticker}:last_signal`
+                : `${strategy}:${ticker}:last_signal`;
 
             if (signal.includes('WIN') || signal.includes('LOSS') || signal.includes('WON') || signal.includes('LOST')) {
                 console.log('🎯 Processing as TRADE RESULT WITH CHART');
@@ -207,7 +211,7 @@ ${flag} <b>${pair}</b>
         if (signal.includes('30MIN') || signal.includes('30M')) return '30 MINUTES';
 
         // Default to 1 minute if no timeframe detected
-        return '5 MINUTES';
+        return '3 MINUTES';
     }
 };
 
