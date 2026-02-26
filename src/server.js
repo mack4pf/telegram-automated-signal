@@ -39,7 +39,10 @@ app.post('/webhook/tradingview', (req, res, next) => {
 }, webhookController.handleTradingViewAlert);
 
 // 2. Dynamic Strategy Support (e.g., /webhook/gold, /webhook/silver)
-app.post('/webhook/:strategy', webhookController.handleTradingViewAlert);
+app.post('/webhook/:strategy', (req, res, next) => {
+    req.allowExecutor = true;
+    next();
+}, webhookController.handleTradingViewAlert);
 
 // Basic route - now shows Redis status
 app.get('/', (req, res) => {
