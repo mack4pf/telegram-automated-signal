@@ -24,9 +24,19 @@ class ExecutorService {
         }
 
         try {
-            // Signal mapping: Call -> buy, Put -> sell
+            // Signal mapping
             const rawSignal = (alertData.signal || '').toLowerCase();
-            const signalAction = rawSignal.includes('buy') || rawSignal.includes('call') ? 'buy' : 'sell';
+            console.log(`[Executor] Parsing raw signal from webhook: "${rawSignal}"`);
+
+            let signalAction;
+            if (rawSignal.includes('buy') || rawSignal.includes('call') || rawSignal.includes('long') || rawSignal.includes('up')) {
+                signalAction = 'buy';
+            } else if (rawSignal.includes('sell') || rawSignal.includes('put') || rawSignal.includes('short') || rawSignal.includes('down')) {
+                signalAction = 'sell';
+            } else {
+                console.error(`❌ [Executor] Invalid or missing signal direction: "${rawSignal}". Trading aborted to prevent error.`);
+                return null; // Don't execute if we don't know the direction
+            }
 
             // Time mapping: use alertData.time if available, otherwise parse from signal string
             let timeSeconds = 300;
