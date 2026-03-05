@@ -145,6 +145,24 @@ class RedisService {
             return {};
         }
     }
+
+    // Find strategy name by channel ID (reverse lookup)
+    async findStrategyByChannel(channelId) {
+        if (!this.isConnected) return null;
+        try {
+            const keys = await this.client.keys('channels:*');
+            for (const key of keys) {
+                const isMember = await this.client.sIsMember(key, channelId.toString());
+                if (isMember) {
+                    return key.replace('channels:', '');
+                }
+            }
+            return null;
+        } catch (error) {
+            console.error('❌ Failed to find strategy by channel:', error);
+            return null;
+        }
+    }
 }
 
 // Create single instance

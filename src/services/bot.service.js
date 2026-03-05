@@ -35,6 +35,16 @@ class BotService {
         }
 
         this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+
+        // Handle and suppress 409 Conflict errors (multiple instances)
+        this.bot.on('polling_error', (error) => {
+            if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
+                // Do not log 409 conflicts to avoid flooding the logs
+                return;
+            }
+            console.error('🤖 Bot Polling Error:', error.message || error);
+        });
+
         this.bot.on('message', this.handleMessage);
         this.bot.on('callback_query', this.handleCallback);
 

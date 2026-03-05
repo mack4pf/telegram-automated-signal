@@ -163,8 +163,16 @@ class TelegramService {
     }
 
     // Broadcast message to all configured channels for a STRATEGY
-    async broadcastToAllChannels(message, strategy = 'vip') {
-        const channelIds = await this.getStrategyChannels(strategy);
+    async broadcastToAllChannels(message, strategy = 'vip', extraChatId = null) {
+        let channelIds = await this.getStrategyChannels(strategy);
+
+        // Include extraChatId if provided
+        if (extraChatId) {
+            const extraStr = extraChatId.toString();
+            if (!channelIds.includes(extraStr)) {
+                channelIds.push(extraStr);
+            }
+        }
 
         if (channelIds.length === 0) {
             console.log(`⚠️  No channels configured for strategy '${strategy}'`);
@@ -182,8 +190,16 @@ class TelegramService {
     }
 
     // Broadcast photo to all configured channels for a STRATEGY
-    async broadcastPhotoToAllChannels(photoBuffer, caption, strategy = 'vip') {
-        const channelIds = await this.getStrategyChannels(strategy);
+    async broadcastPhotoToAllChannels(photoBuffer, caption, strategy = 'vip', extraChatId = null) {
+        let channelIds = await this.getStrategyChannels(strategy);
+
+        // Include extraChatId if provided
+        if (extraChatId) {
+            const extraStr = extraChatId.toString();
+            if (!channelIds.includes(extraStr)) {
+                channelIds.push(extraStr);
+            }
+        }
 
         if (channelIds.length === 0) {
             console.log(`⚠️  No channels configured for strategy '${strategy}'`);

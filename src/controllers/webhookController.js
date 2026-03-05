@@ -53,7 +53,18 @@ const webhookController = {
             const ticker = (alertData.ticker || 'EURUSD').toUpperCase().replace('/', '');
             alertData.ticker = ticker;
 
-            const strategy = alertData.strategy || 'vip';
+            // Strategy detection improvement:
+            // 1. If strategy is missing but chat_id is present, try to find the strategy in Redis
+            let strategy = alertData.strategy || 'vip';
+            if ((!alertData.strategy || alertData.strategy === 'vip') && alertData.chat_id) {
+                const foundStrategy = await redisService.findStrategyByChannel(alertData.chat_id);
+                if (foundStrategy) {
+                    strategy = foundStrategy;
+                    console.log(`🎯 Reverse lookup found strategy: ${strategy} for chat_id: ${alertData.chat_id}`);
+                }
+            }
+            alertData.strategy = strategy;
+
             console.log(`🔄 Processing signal for [${strategy.toUpperCase()}] strategy [${ticker}]...`);
 
             const signal = (alertData.signal || '').toUpperCase();
@@ -80,8 +91,8 @@ const webhookController = {
                 console.log(`💾 Stored signal "${alertData.signal}" for ${alertData.ticker} (Key: ${redisKey})`);
 
                 const message = webhookController.formatNewSignal(alertData);
-                // BROADCAST to configured channels for this strategy
-                const success = await telegramService.broadcastToAllChannels(message, strategy);
+                // BROADCAST to configured channels for this strategy + explicit chat_id
+                const success = await telegramService.broadcastToAllChannels(message, strategy, alertData.chat_id);
                 if (success) console.log(`✅ Signal broadcast to [${strategy}] channels`);
                 else console.log(`❌ Failed to broadcast to [${strategy}] channels`);
 
@@ -119,13 +130,13 @@ const webhookController = {
             const message = webhookController.formatTradeResult(alertData);
 
             if (chartBuffer) {
-                // BROADCAST to all configured channels
-                const success = await telegramService.broadcastPhotoToAllChannels(chartBuffer, message, strategy);
+                // BROADCAST to all configured channels + explicit chat_id
+                const success = await telegramService.broadcastPhotoToAllChannels(chartBuffer, message, strategy, alertData.chat_id);
                 if (success) console.log(`✅ Trade result with chart broadcast to [${strategy}] channels`);
                 else console.log(`❌ Failed to broadcast trade result with chart`);
             } else {
-                // BROADCAST to all configured channels
-                const success = await telegramService.broadcastToAllChannels(message, strategy);
+                // BROADCAST to all configured channels + explicit chat_id
+                const success = await telegramService.broadcastToAllChannels(message, strategy, alertData.chat_id);
                 if (success) console.log(`✅ Trade result broadcast to [${strategy}] channels (no chart)`);
                 else console.log(`❌ Failed to broadcast trade result`);
             }
