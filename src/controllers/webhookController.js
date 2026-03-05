@@ -130,7 +130,8 @@ const webhookController = {
                 else console.log(`❌ Failed to broadcast trade result`);
             }
 
-            // --- INTEGRATION WITH EXECUTOR (LEGACY VIP ROUTE ONLY) ---
+            // --- INTEGRATION WITH EXECUTOR (DISABLED TO PREVENT GHOST SIGNALS) ---
+            /*
             if (allowExecutor) {
                 const executorKey = `executor:last_id:${alertData.ticker}`;
                 const signalId = await redisService.get(executorKey);
@@ -138,10 +139,11 @@ const webhookController = {
                     await executorService.sendResult(signalId, alertData.signal);
                 }
             }
+            */
             // ---------------------------------
 
-            // FORWARD to external platform
-            forwardingService.forwardSignal(alertData);
+            // FORWARD to external platform (DISABLED TO PREVENT GHOST SIGNALS)
+            // forwardingService.forwardSignal(alertData);
 
         } catch (error) {
             console.error('❌ Trade result processing error:', error);
@@ -163,14 +165,24 @@ const webhookController = {
         else if (pair.includes('USD/CAD') || pair.includes('USDCAD')) flag = '🇺🇸🇨🇦';
         else if (pair.includes('XAU/USD') || pair.includes('XAUUSD')) flag = '🥇🇺🇸';
 
-        // Extract signal direction and REAL timeframe
-        const signal = alertData.signal || 'BUY';
+        // Robust direction detection for Telegram display
+        const rawSignal = (alertData.signal || alertData.direction || alertData.action || '').toLowerCase();
+        let displaySignal = 'Unknown';
+
+        if (rawSignal.includes('buy') || rawSignal.includes('call') || rawSignal.includes('long') || rawSignal.includes('up')) {
+            displaySignal = 'BUY';
+        } else if (rawSignal.includes('sell') || rawSignal.includes('put') || rawSignal.includes('short') || rawSignal.includes('down')) {
+            displaySignal = 'SELL';
+        } else if (alertData.signal) {
+            displaySignal = alertData.signal.toUpperCase();
+        }
+
         const timeframe = webhookController.extractRealTimeframe(alertData);
 
         return `⚡ <b>INCOMING SIGNAL</b> 
 
 ${flag} <b>${pair}</b>
-🔔 <b>${signal.toUpperCase()}</b>
+🔔 <b>${displaySignal}</b>
 ⏰ <b>${timeframe}</b>
 
 <a href="https://affiliate.iqoption.net/redir/?aff=785369&aff_model=revenue&afftrack=">Click to Start copy trade</a>
@@ -201,16 +213,17 @@ ${flag} <b>${pair}</b>
     },
 
     extractRealTimeframe(alertData) {
-        const signal = alertData.signal || '';
+        const signal = (alertData.signal || '').toUpperCase();
+        const bodyText = JSON.stringify(alertData).toUpperCase();
 
-        // Look for actual timeframe in the signal
-        if (signal.includes('5MIN') || signal.includes('5M')) return '5 MINUTES';
-        if (signal.includes('3MIN') || signal.includes('3M')) return '3 MINUTES';
-        if (signal.includes('1MIN') || signal.includes('1M')) return '1 MINUTE';
-        if (signal.includes('15MIN') || signal.includes('15M')) return '15 MINUTES';
-        if (signal.includes('30MIN') || signal.includes('30M')) return '30 MINUTES';
+        // Look for actual timeframe in the signal or body
+        if (bodyText.includes('5MIN') || bodyText.includes('5M')) return '5 MINUTES';
+        if (bodyText.includes('3MIN') || bodyText.includes('3M')) return '3 MINUTES';
+        if (bodyText.includes('1MIN') || bodyText.includes('1M')) return '1 MINUTE';
+        if (bodyText.includes('15MIN') || bodyText.includes('15M')) return '15 MINUTES';
+        if (bodyText.includes('30MIN') || bodyText.includes('30M')) return '30 MINUTES';
 
-        // Default to 1 minute if no timeframe detected
+        // Default to 5 minutes
         return '5 MINUTES';
     }
 };

@@ -25,7 +25,7 @@ class ExecutorService {
 
         try {
             // Signal mapping
-            const rawSignal = (alertData.signal || '').toLowerCase();
+            const rawSignal = (alertData.signal || alertData.direction || alertData.action || '').toLowerCase();
             console.log(`[Executor] Parsing raw signal from webhook: "${rawSignal}"`);
 
             let signalAction;
@@ -87,6 +87,9 @@ class ExecutorService {
      * @param {string} result - "WIN" or "LOSS"
      */
     async sendResult(signalId, result) {
+        // Disabled to prevent ghost signals - user request
+        return true;
+        /*
         if (!this.isEnabled || !signalId) {
             console.log('⚠️ Cannot send result: Service disabled or no signalId');
             return false;
@@ -120,6 +123,7 @@ class ExecutorService {
             console.error('❌ Failed to report result to executor:', error.response?.data || error.message);
             return false;
         }
+        */
     }
 }
 
