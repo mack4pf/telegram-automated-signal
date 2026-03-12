@@ -325,9 +325,9 @@ class RealTradeResultService {
 
     formatSymbol(ticker) {
         // Clean ticker from TradingView prefixes (e.g., BINANCE:EURUSD -> EURUSD)
-        let cleanTicker = ticker;
-        if (ticker.includes(':')) {
-            cleanTicker = ticker.split(':')[1];
+        let cleanTicker = ticker.toUpperCase().replace('-OTC', '').replace('/OTC', '').replace(' ', '');
+        if (cleanTicker.includes(':')) {
+            cleanTicker = cleanTicker.split(':')[1];
         }
 
         const pairs = {

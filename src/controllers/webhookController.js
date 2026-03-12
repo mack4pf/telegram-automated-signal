@@ -67,22 +67,33 @@ const webhookController = {
 
             console.log(`🔄 Processing signal for [${strategy.toUpperCase()}] strategy [${ticker}]...`);
 
-            const signal = (alertData.signal || '').toUpperCase();
-            console.log(`🔍 Detected signal: "${signal}"`);
+            // Improved signal detection (check all common TradingView fields)
+            const rawSignalStr = (alertData.signal || alertData.direction || alertData.action || alertData.result || '').toUpperCase();
+            const signal = rawSignalStr;
+            console.log(`🔍 Detected raw signal text: "${rawSignalStr}"`);
 
             // Use legacy key for 'vip' to preserve open trades, namespace others
             const redisKey = strategy === 'vip'
                 ? `${ticker}:last_signal`
                 : `${strategy}:${ticker}:last_signal`;
 
-            if (signal.includes('WIN') || signal.includes('LOSS') || signal.includes('WON') || signal.includes('LOST')) {
+            // CRITICAL: Better detection for result vs new signal
+            const isResult = signal.includes('WIN') || 
+                             signal.includes('LOSS') || 
+                             signal.includes('WON') || 
+                             signal.includes('LOST') || 
+                             signal.includes('PROFIT') || 
+                             signal.includes('ITM') || 
+                             signal.includes('OTM');
+
+            if (isResult) {
                 console.log('🎯 Processing as TRADE RESULT WITH CHART');
 
                 // GET ORIGINAL SIGNAL FROM REDIS
                 const originalSignal = await redisService.get(redisKey) || 'Buy';
                 console.log(`📝 Original signal was: ${originalSignal}`);
 
-                await webhookController.processTradeResultWithChart(alertData, originalSignal, strategy, allowExecutor);
+                await webhookController.processTradeResultWithChart(alertData, originalSignal, strategy, allowExecutor, signal);
             } else {
                 console.log('⚡ Processing as NEW SIGNAL (text only)');
 
@@ -115,19 +126,20 @@ const webhookController = {
         }
     },
 
-    async processTradeResultWithChart(alertData, originalSignal, strategy, allowExecutor = false) {
+    async processTradeResultWithChart(alertData, originalSignal, strategy, allowExecutor = false, detectedResult) {
         try {
-            console.log(`🎯 Processing trade result - Original: ${originalSignal}, Result: ${alertData.signal}`);
+            const finalResultText = detectedResult || (alertData.signal || '').toUpperCase();
+            console.log(`🎯 Processing trade result - Original: ${originalSignal}, Result: ${finalResultText}`);
 
             // CORRECT: Pass BOTH signals to the chart service
             const chartBuffer = await realTradeResultService.generateTradeResult(
                 alertData.ticker,
                 originalSignal, // "Sell" (from Redis)
-                alertData.signal, // "Loss" (from TradingView webhook)
+                finalResultText, // Normalized result (from TradingView)
                 alertData.price
             );
 
-            const message = webhookController.formatTradeResult(alertData);
+            const message = webhookController.formatTradeResult(alertData, finalResultText);
 
             if (chartBuffer) {
                 // BROADCAST to all configured channels + explicit chat_id
@@ -158,9 +170,9 @@ const webhookController = {
 
         } catch (error) {
             console.error('❌ Trade result processing error:', error);
-            const message = webhookController.formatTradeResult(alertData);
+            const message = webhookController.formatTradeResult(alertData, detectedResult);
             // Fallback: broadcast text only
-            await telegramService.broadcastToAllChannels(message, strategy);
+            await telegramService.broadcastToAllChannels(message, strategy, alertData.chat_id);
         }
     },
 
@@ -201,17 +213,17 @@ ${flag} <b>${pair}</b>
 `;
     },
 
-    formatTradeResult(alertData) {
-        const signal = (alertData.signal || '').toUpperCase();
+    formatTradeResult(alertData, finalResultText) {
+        const signal = (finalResultText || alertData.signal || '').toUpperCase();
         const pair = alertData.ticker || '';
 
         let resultEmoji = '🎯';
         let resultText = 'RESULT';
 
-        if (signal.includes('WIN') || signal.includes('WON')) {
+        if (signal.includes('WIN') || signal.includes('WON') || signal.includes('PROFIT') || signal.includes('ITM')) {
             resultEmoji = '🏆';
             resultText = 'WIN';
-        } else if (signal.includes('LOSS') || signal.includes('LOST')) {
+        } else if (signal.includes('LOSS') || signal.includes('LOST') || signal.includes('OTM')) {
             resultEmoji = '🚫';
             resultText = 'LOSS';
         }
