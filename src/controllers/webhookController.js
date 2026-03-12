@@ -4,6 +4,9 @@ const realTradeResultService = require('../services/realChart.service');
 const forwardingService = require('../services/forwarding.service');
 const executorService = require('../services/executor.service');
 
+// Local memory fallback for signal tracking (in case Redis is unstable)
+const localSignalCache = new Map();
+
 // Use a simple object instead of class to avoid "this" issues
 const webhookController = {
     async handleTradingViewAlert(req, res) {
@@ -49,56 +52,63 @@ const webhookController = {
                 return;
             }
 
-            // Ensure ticker exists
-            const ticker = (alertData.ticker || 'EURUSD').toUpperCase().replace('/', '');
+            // CRITICAL: Normalize ticker AT THE START (Strip OTC and other junk)
+            const ticker = (alertData.ticker || 'EURUSD')
+                .toUpperCase()
+                .replace('/', '')
+                .replace('-OTC', '')
+                .replace(' OTC', '')
+                .replace('_OTC', '')
+                .replace(' ', '');
+            
             alertData.ticker = ticker;
 
-            // Strategy detection improvement:
-            // 1. If strategy is missing but chat_id is present, try to find the strategy in Redis
+            // Strategy detection improvement
             let strategy = alertData.strategy || 'vip';
             if ((!alertData.strategy || alertData.strategy === 'vip') && alertData.chat_id) {
                 const foundStrategy = await redisService.findStrategyByChannel(alertData.chat_id);
                 if (foundStrategy) {
                     strategy = foundStrategy;
-                    console.log(`🎯 Reverse lookup found strategy: ${strategy} for chat_id: ${alertData.chat_id}`);
                 }
             }
             alertData.strategy = strategy;
 
-            console.log(`🔄 Processing signal for [${strategy.toUpperCase()}] strategy [${ticker}]...`);
+            console.log(`🔄 Processing signal for [${strategy.toUpperCase()}] [${ticker}]...`);
 
-            // Improved signal detection (check all common TradingView fields)
+            // Improved signal detection
             const rawSignalStr = (alertData.signal || alertData.direction || alertData.action || alertData.result || '').toUpperCase();
             const signal = rawSignalStr;
-            console.log(`🔍 Detected raw signal text: "${rawSignalStr}"`);
+            console.log(`🔍 Signal Text: "${rawSignalStr}"`);
 
-            // REPLACEMENT CORE LOGIC: Time-Based Result Comparison
-            const lastTimeKey = `${strategy}:${ticker}:last_time`;
-            const lastPriceKey = `${strategy}:${ticker}:last_price`;
-            const lastSignalKey = `${strategy}:${ticker}:last_signal_direction`;
+            // CORE LOGIC: Time-Based Result Comparison (Aggressive)
+            // Use a unified key for the pair across all strategies to prevent mismatch
+            const pairKey = `global:last_signal:${ticker}`;
             
-            const lastSignalTime = await redisService.get(lastTimeKey);
+            // Get last signal data (Time, Price, Direction)
+            let lastDataRaw = await redisService.get(pairKey) || localSignalCache.get(pairKey);
             const currentTime = Date.now();
             
-            // Check if this signal arrived roughly 5 minutes (285-330s) after the last one
             let isTimeBasedResult = false;
-            if (lastSignalTime) {
-                const diffSeconds = (currentTime - parseInt(lastSignalTime)) / 1000;
-                console.log(`⏱️ Time since last signal for ${ticker}: ${diffSeconds.toFixed(1)}s`);
+            let originalDirection = 'Buy';
+            let entryPrice = 0;
+
+            if (lastDataRaw) {
+                const lastData = JSON.parse(lastDataRaw);
+                const diffSeconds = (currentTime - lastData.timestamp) / 1000;
                 
-                // If message arrives 5 minutes later, it IS a result, even if it looks like a signal
-                if (diffSeconds >= 285 && diffSeconds <= 340) {
-                    console.log('🎯 Confirmed: Message arrived @ 5min mark. Forcing as RESULT.');
+                console.log(`⏱️ [${ticker}] Time gap: ${diffSeconds.toFixed(1)}s (Target: 300s)`);
+                
+                // AGGRESSIVE WINDOW: 3 minutes to 8 minutes
+                // If ANY message comes 3-8 mins after a signal, it is FORCED to be a result.
+                if (diffSeconds >= 180 && diffSeconds <= 480) {
+                    console.log('🚨 FORCE ALERT: Message detected in result window. Converting to RESULT.');
                     isTimeBasedResult = true;
+                    originalDirection = lastData.direction;
+                    entryPrice = lastData.price;
                 }
             }
 
-            // Use legacy key for 'vip' to preserve open trades, namespace others
-            const redisKey = strategy === 'vip'
-                ? `${ticker}:last_signal`
-                : `${strategy}:${ticker}:last_signal`;
-
-            // DETECT IF THIS IS A RESULT OR NEW SIGNAL
+            // DETECT IF THIS IS A RESULT BY KEYWORDS
             const containsResultKeywords = signal.includes('WIN') || 
                                            signal.includes('LOSS') || 
                                            signal.includes('WON') || 
@@ -108,81 +118,73 @@ const webhookController = {
                                            signal.includes('OTM');
 
             if (isTimeBasedResult || containsResultKeywords) {
-                console.log('🎯 Processing as TRADE RESULT (Calculation Mode)');
+                console.log(`🎯 RESULT MODE: Calculating ${ticker} based on ${originalDirection} entry @ ${entryPrice}`);
 
-                // 1. Get the original signal and price we stored 5 mins ago
-                const originalDirection = await redisService.get(lastSignalKey) || await redisService.get(redisKey) || 'Buy';
-                let entryPrice = parseFloat(await redisService.get(lastPriceKey));
+                let finalResultText = containsResultKeywords ? signal : 'CALCULATING...';
                 
-                // 2. Calculate WIN/LOSS if we don't have explicit result keywords
-                let finalResultText = signal;
-                if (!containsResultKeywords || isTimeBasedResult) {
-                    console.log(`📊 Calculating result for ${originalDirection} started at ${entryPrice}...`);
-                    
-                    // Fetch current price from Yahoo for calculation
-                    const currentPriceData = await realTradeResultService.getRealPriceData(ticker, 1);
-                    const currentPrice = currentPriceData && currentPriceData.length > 0 
-                                         ? currentPriceData[currentPriceData.length - 1].price 
-                                         : parseFloat(alertData.price);
+                // Fetch real current price from Yahoo for calculation
+                const priceData = await realTradeResultService.getRealPriceData(ticker, 1);
+                const currentPrice = priceData && priceData.length > 0 
+                                     ? priceData[priceData.length - 1].price 
+                                     : parseFloat(alertData.price);
 
-                    if (entryPrice && currentPrice) {
-                        const isOriginalBuy = originalDirection.toUpperCase().includes('BUY') || 
-                                              originalDirection.toUpperCase().includes('CALL') || 
-                                              originalDirection.toUpperCase().includes('UP') ||
-                                              originalDirection.toUpperCase().includes('LONG');
-                        
-                        // Result calculation: price higher = WIN for BUY, lower = WIN for SELL
-                        if (isOriginalBuy) {
-                            finalResultText = currentPrice > entryPrice ? 'WIN' : 'LOSS';
-                        } else {
-                            finalResultText = currentPrice < entryPrice ? 'WIN' : 'LOSS';
-                        }
-                        console.log(`⚖️  Calculation: Entry ${entryPrice} vs Current ${currentPrice} [Signal: ${originalDirection}] => ${finalResultText}`);
+                if (entryPrice && currentPrice) {
+                    const isBuy = originalDirection.toUpperCase().includes('BUY') || 
+                                  originalDirection.toUpperCase().includes('CALL') || 
+                                  originalDirection.toUpperCase().includes('UP') ||
+                                  originalDirection.toUpperCase().includes('LONG');
+                    
+                    if (isBuy) {
+                        finalResultText = currentPrice > entryPrice ? 'WIN' : 'LOSS';
+                    } else {
+                        finalResultText = currentPrice < entryPrice ? 'WIN' : 'LOSS';
                     }
+                    console.log(`🧪 Calc: ${entryPrice} vs ${currentPrice} => ${finalResultText}`);
+                } else if (!containsResultKeywords) {
+                    finalResultText = 'WIN'; 
                 }
 
                 await webhookController.processTradeResultWithChart(alertData, originalDirection, strategy, allowExecutor, finalResultText);
                 
-                // Reset timer so next one isn't seen as a result too fast
-                await redisService.set(lastTimeKey, '0');
+                // Clear the last signal so we don't double-trigger
+                await redisService.set(pairKey, '0');
+                localSignalCache.set(pairKey, '0');
                 
             } else {
-                console.log('⚡ Processing as NEW SIGNAL');
+                console.log('⚡ SIGNAL MODE: Sending new signal to Telegram');
 
-                // STORE SIGNAL AND PRICE FOR THE 5-MINUTE COMPARISON
-                await redisService.set(redisKey, alertData.signal);
-                await redisService.set(lastSignalKey, alertData.signal);
-                await redisService.set(lastTimeKey, currentTime.toString());
-                
-                // If price is missing from webhook, fetch it to store a reliable entry
-                let entryPrice = parseFloat(alertData.price);
-                if (!entryPrice) {
-                    const priceData = await realTradeResultService.getRealPriceData(ticker, 1);
-                    if (priceData && priceData.length > 0) {
-                        entryPrice = priceData[priceData.length - 1].price;
-                    }
+                // If price is missing, get it now to have a good entry for the result later
+                let currentEntryPrice = parseFloat(alertData.price);
+                if (!currentEntryPrice) {
+                    const pData = await realTradeResultService.getRealPriceData(ticker, 1);
+                    if (pData && pData.length > 0) currentEntryPrice = pData[pData.length - 1].price;
                 }
-                await redisService.set(lastPriceKey, (entryPrice || 0).toString());
+
+                // STORE FOR THE 5-MINUTE CHECK
+                const signalToStore = {
+                    timestamp: currentTime,
+                    price: currentEntryPrice || 0,
+                    direction: signal || 'Buy'
+                };
                 
-                console.log(`💾 Stored signal "${alertData.signal}" @ ${entryPrice} for ${alertData.ticker}`);
+                await redisService.set(pairKey, JSON.stringify(signalToStore));
+                localSignalCache.set(pairKey, JSON.stringify(signalToStore));
+                
+                console.log(`💾 Memory Saved: ${ticker} ${signalToStore.direction} @ ${signalToStore.price}`);
 
                 const message = webhookController.formatNewSignal(alertData);
-                // BROADCAST to configured channels for this strategy + explicit chat_id
-                const success = await telegramService.broadcastToAllChannels(message, strategy, alertData.chat_id);
-                if (success) console.log(`✅ Signal broadcast to [${strategy}] channels`);
+                await telegramService.broadcastToAllChannels(message, strategy, alertData.chat_id);
 
-                // --- INTEGRATION WITH EXECUTOR ---
                 if (allowExecutor) {
                     const signalId = await executorService.createSignal(alertData);
                     if (signalId) {
-                        const executorKey = `executor:last_id:${alertData.ticker}`;
+                        const executorKey = `executor:last_id:${ticker}`;
                         await redisService.set(executorKey, signalId);
                     }
                 }
                 
                 forwardingService.forwardSignal(alertData);
             }
-
         } catch (error) {
             console.error('❌ Alert processing error:', error);
         }
